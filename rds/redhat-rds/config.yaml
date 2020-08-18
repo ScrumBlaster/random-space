@@ -1,0 +1,93 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: MySQL RDS inside Red Hat  cet, 14.05.2020.  11:59:43 CEST
+Resources:
+   Ec2Instance1:
+      Type: 'AWS::EC2::Instance'
+      Properties:
+           SecurityGroups:
+               - !Ref InstanceSecurityGroup
+           KeyName: adivir
+           ImageId: ami-07dfba995513840b5
+           AvailabilityZone: eu-central-1
+           InstanceType: t2.micro
+           UserData:
+              Fn::Base64: !Sub |
+               #!/bin/bash -xe
+               yum install -y httpd
+               yum install -y git
+               yum install -y php php-mysql
+               git clone https://github.com/demoglot/php.git /var/www/html
+               systemctl restart httpd
+               systemctl enable httpd
+   Ec2Instance2:
+      Type: 'AWS::EC2::Instance'
+      Properties:
+           SecurityGroups:
+               - !Ref InstanceSecurityGroup
+           KeyName: adivir
+           ImageId: ami-07dfba995513840b5
+           AvailabilityZone: eu-central-1
+           InstanceType: t2.micro
+           UserData:
+             Fn::Base64: !Sub |
+               #!/bin/bash -xe
+               yum install -y httpd
+               yum install git -y
+               git clone https://github.com/demoglot/php.git /var/www/html
+               systemctl restart httpd
+               systemctl enable httpd
+   InstanceSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Enable SSH access
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '2256'
+          ToPort: '2256'
+          CidrIp: 0.0.0.0/0
+
+        - IpProtocol: tcp
+          FromPort: '80'
+          ToPort: '80'
+          CidrIp: 0.0.0.0/0
+   ElasticLoadBalancer:
+    Type: 'AWS::ElasticLoadBalancing::LoadBalancer'
+    Properties:
+        AvailabilityZones:
+             - eu-central-1
+             - eu-central-1b
+        Listeners:
+            - InstancePort: '80'
+              LoadBalancerPort: '80'
+              Protocol: HTTP
+        HealthCheck:
+              Target: 'HTTP:80/'
+              HealthyThreshold: '3'
+              UnhealthyThreshold: '5'
+              Interval: '30'
+              Timeout: '5'
+        Instances :
+           - !Ref Ec2Instance1
+           - !Ref Ec2Instance2
+   DBSECURITYGROUP:
+    Type: 'AWS::RDS::DBSecurityGroup'
+    Properties:
+          GroupDescription: Security Group for RDS private access
+          DBSecurityGroupIngress:
+            - CIDRIP: 0.0.0.0/0
+   MyDB:
+    Type: 'AWS::RDS::DBInstance'
+    Properties:
+        DBName: kk
+        AllocatedStorage: '20'
+        DBInstanceClass: db.t2.micro
+        Engine: MariaDB
+        EngineVersion: '10.1.31'
+        MasterUsername: admin
+        MasterUserPassword: admin123
+        DBSecurityGroups:
+            - !Ref DBSECURITYGROUP
+        Tags:
+           - Key: name
+             Value: kk
+    DeletionPolicy: Snapshot

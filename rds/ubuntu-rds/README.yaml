@@ -1,0 +1,2 @@
+AWS cloudformation template that creates ubuntu 18.04 ec2 instance, installs docker, pulls postgres docker image,
+runs postgres configuration, enables rout53 and connection in private network to postgres database.
