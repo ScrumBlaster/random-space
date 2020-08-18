@@ -1,0 +1,51 @@
+<!DOCTYPE HTML>
+<html xmlns:th="http://www.thymeleaf.org" xmlns="http://www.w3.org/1999/html">
+<head>
+    <meta charset="UTF-8"/>
+    <title>Calculation</title>
+</head>
+<body>
+<div>
+    <h1>Calculation</h1>
+    <form action="#"  th:object="${item}" method="post">
+        <p>Length: <input type="number" id="length" th:field="*{length}" /></p>
+        <p>Width: <input type="number" th:field="*{width}" /></p>
+        <br>
+        <input type="submit"
+               class="form-control"
+               value="Calculate"/>
+    </form>
+    <br>
+    <hr>
+    <br>
+    Result:
+    <p>
+        <textarea id="result" th:text="${result}"placeholder="Result" ></textarea></p>
+    <br><br>
+    History:
+    <br>
+    <table>
+        <thead>
+        <tr>
+            <th>ID</th><td></td>
+            <th>UserIP</th><td></td>
+            <th>Time</th><td></td>
+            <th>Length</th><td></td>
+            <th>Width</th><td></td>
+            <th>Square</th><td></td>
+        </tr>
+        </thead>
+        <tbody>
+        <tr th:each="item : ${historyItems}">
+            <td th:text="${item.id}"/><td></td>
+            <td th:text="${item.ip}"/><td></td>
+            <td th:text="${item.time}"/><td></td>
+            <td th:text="${item.length}"/><td></td>
+            <td th:text="${item.width}"/><td></td>
+            <td th:text="${item.square}"/><td></td>
+        </tr>
+        </tbody>
+    </table>
+</div>
+</body>
+</html>
