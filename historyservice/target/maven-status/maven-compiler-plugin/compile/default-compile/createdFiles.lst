@@ -1,0 +1,5 @@
+com\example\accessingdatamysql\HistoryRepository.class
+com\example\accessingdatamysql\Sbp1MarijanApplication.class
+com\example\accessingdatamysql\MainController.class
+com\example\accessingdatamysql\History.class
+com\example\accessingdatamysql\SwaggerConfig.class
