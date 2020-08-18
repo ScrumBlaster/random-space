@@ -1,0 +1,170 @@
+#!/bin/bash
+#Please run this script as root
+mkdir /tmp/scriptlog
+MOMENT=$(date +'%Y-%m-%d %H:%M:%S.%s')
+OSID=$(cat /etc/os-release | grep "ID=")
+STATUS=$(/tmp/scriptlog/web_service-${MOMENT}.csv)
+USERS=(robert mario bozo ivona sinisa)
+#Confirming OS and Script start time
+echo "Script web_service.sh started at $MOMENT" > $STATUS
+echo "Confirming OS: $OSID" >> $STATUS
+if [ $OSID == "ubuntu" ]
+  then
+    echo "Installing Updates at $MOMENT" >> $STATUS
+    apt-get update -y
+                             #datum;test1;test2;test3;
+                             #06.12.2019;ok;ok;failed; watch this: https://linuxacademy.com/cp/courses/lesson/course/4468/lesson/1/module/341
+      if [ $? -eq 0 ]
+        then
+          echo "Installing Updates complete" >> $STATUS
+          exit 0
+        else
+          echo "Installing Updates Error" >> $STATUS
+          exit 1
+      fi
+#installing Apache2
+    echo "Installing Apache2 at $MOMENT" >> $STATUS
+      if service --status-all | grep -Fq 'apache2'
+        then
+          apt-get --purge remove apache2
+          apt-get autoremove
+      fi
+    apt install apache2
+    ufw app list
+    ufw allow 'Apache'
+    systemctl status apache2
+      if [ $? -eq 0 ]
+        then
+          echo "Installed a new Apache2" >> $STATUS
+          exit 0
+        else
+          echo "Installing Apache2 Error" >> $STATUS
+          exit 1
+      fi
+#Adding wwwuser1 as Apache2 service runner
+    echo "Confirm old users and add wwwuser1 as service runner at $MOMENT" >> $STATUS
+    mkdir -p /var/www/domain.com/html
+      if grep wwwuser1 /etc/passwd
+        then userdel -r wwwuser1
+      fi
+    useradd -m -d /var/www/ wwwuser1 && groupadd wwwuser1
+    chgrp -R wwwuser1 /var/www/
+    chmod -R g+wx /var/www/
+    chmod g+s /var/www/
+
+    sed -i '115 s/${APACHE_RUN_USER}/wwwuser1/' /etc/apache2/apache2.conf
+    sed -i '116 s/${APACHE_RUN_GROUP}/wwwuser1/' /etc/apache2/apache2.conf
+    sed -i '16,17 s/www-data/wwwuser1/' /etc/apache2/envvars
+
+      if [ $? -eq 0 ]
+        then
+          echo "User wwwuser1 is now the owner and service runner of Apache2" >> $STATUS
+          exit 0
+        else
+          echo "Something went wrong while adding wwwuser1" >> $STATUS
+          exit 1
+      fi
+
+#Adding port 8081
+    echo "Configuring Apache2 port 8081 at $MOMENT" >> $STATUS
+    sed -i -e '6iListen 8081' /etc/apache2/ports.conf
+    echo " \
+    <VirtualHost *:80 *:8081>
+    ServerAdmin wwwuser1@domain.com
+    ServerName domain.com
+    ServerAlias www.domain.com
+    DocumentRoot /var/www/domain.com/html
+    ErrorLog ${APACHE_LOG_DIR}/error.log
+    CustomLog ${APACHE_LOG_DIR}/access.log combined
+    </VirtualHost>" >> /etc/apache2/sites-available/domain.com.conf
+      if [ $? -eq 0 ]
+        then
+          echo "Configuring port 8081 done" >> $STATUS
+          exit 0
+        else
+          echo "Configuring port 8081 failed" >> $STATUS
+          exit 1
+      fi
+#Creating INDEX that shows refreshed IP
+    echo "Creating INDEX that shows refreshed IP at $MOMENT" >> $STATUS
+    set +H
+    echo " \
+    <html>
+    <head>
+    <h1>Welcome to the APPON test site!<h1>
+    </head>
+    <body>
+    <h1>You got Lucky! Your sampledomain.com server block is up!<h1>
+    <h1> <h1>\
+    </body>
+    </html>" > /var/www/domain.com/html/index.html
+      if [ $? -eq 0 ]
+        then
+          echo "Index creating done" >> $STATUS
+          exit 0
+        else
+          echo "Index creating failed" >> $STATUS
+          exit 1
+      fi
+#Set the Crontab for ip refreshing on index
+    echo "Set cron automation for index at $MOMENT" >> $STATUS
+    sed -i -E '15i*/1 * * * * wwwuser1 SHOW=$(curl http://169.254.169.254/latest/meta-data/public-ipv4 | grep -E -o "([0-9]{1,3}[\.]){3}[0-9]{1,3}"); sleep 1 | sed -i "6i<h1>The IP is $SHOW and people must trust us! <h1>" /var/www/domain.com/html/index.html; sed -i '7d' /var/www/domain.com/html/index.html\' /etc/crontab
+      if [ $? -eq 0 ]
+        then
+          echo "Cron IP configuration done" >> $STATUS
+          exit 0
+        else
+          echo "Cron IP configuration failed" >> $STATUS
+          exit 1
+      fi
+#Starting services, sites, crontabs...
+    echo "Starting services, sites, crontab configurations at $MOMENT" >> $STATUS
+    a2ensite domain.com.conf
+    a2dissite 000-default.conf
+    systemctl reload apache2
+    systemctl restart apache2
+    apache2ctl configtest
+    service cron restart
+
+#Adding users with SSH key pair
+    echo "Checking existing users and adding new at $MOMENT" >> $STATUS
+      for ITEM in ${USERS[@]}
+        do grep ${ITEM} /etc/passwd
+             if [[ $? gt 0 ]]
+               then
+                 userdel -r ${ITEM}
+             fi
+           useradd -m -d /home/${ITEM}/ ${ITEM}
+           mkdir /home/${ITEM}/.ssh
+           chown -R ${ITEM} /home/${ITEM}
+           #?ssh-keygen?
+           echo "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC7txuxMMyWOT6jMxS6lYwywbPN9MgrukMyXHCKIgLSKanPD1f98+tWuWrG3t6LCjlXQdK1hZqsJitmzQuhy5DLjqk8n3+C0IB20eSqV0hMBBo+BD6YZk0OL5V6w+ieoDhSBHJ7ZDT1zXUzQInumZ+CW/94wfgQi8sKF8/QXJEB9iP56dOJ1q2Eydhcbt0WYh6hLKuH3uZ7IE+16/oP4T/N8VGk7fVyGOhnLEGvAlW7Qyy2V8qNJeZtk8ZJgJwERtkrXfQ2dP6d4UXgoVQe6RrD08Amtdi2RKhZoQ3hF8IH1E7ONfDM6Wqz6cjsSA6VR81jAmCmasNsjt5VCcbmAVHP vstronik@VSTRONIKs-MacBook-Air.local" > ./.ssh/authorized_keys
+           chmod 600 ./.ssh/authorized_keys
+        done
+      if [ $? -eq 0 ]
+        then
+          echo "New Users with SSH key pair succes!" >> $STATUS
+          exit 0
+        else
+          echo "New Users with SSH key pair failed!" >> $STATUS
+          exit 1
+      fi
+# look "Encryption" AWS LA https://linuxacademy.com/cp/courses/lesson/course/4442/lesson/8/module/341
+    useradd -m -d /home/ivona/ ivona
+    mkdir /home/ivona/.ssh
+    chown -R ivona /home/ivona
+    chmod 600 ./.ssh/authorized_keys
+
+    useradd -m -d /home/sinisa/ sinisa
+    mkdir /home/sinisa/.ssh
+    chown -R sinisa /home/sinisa
+    chmod 600 ./.ssh/authorized_keys
+
+
+
+  else
+
+
+
+
+fi
