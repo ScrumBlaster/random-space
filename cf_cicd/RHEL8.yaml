@@ -1,0 +1,209 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  AWS CloudFormation Ec2 instance on which will be
+  installed Gitlab Runner. Marko Version
+Parameters:
+  VpcId:
+    Description: VPC Id
+    Type: String
+    Default: vpc-0f8a463d3c84ab974
+  SubnetId:
+    Type: String
+    Default: subnet-058b88b8168ced8d5
+  AvailabilityZone:
+    Type: String
+    Default: eu-central-1b
+  SSHKey:
+    Type: String
+    Default: FrontAdmin
+  InstanceType:
+    Type: String
+    Default: t2.micro
+  RootVolumeSize:
+    Type: String
+    Default: 10
+  AmiId:
+    Type: String
+    Default: ami-07dfba995513840b5
+  GitlabURL:
+    Description: URL of Gitlab instance
+    Type: String
+    Default: 'http://gitlab.common.internal/'
+  GitlabRunnerToken:
+    Description: >-
+      Use this registration token (project specific token) during Gitlab Runner
+      setup
+    Type: String
+    Default: yNvbwhvaNofG1Byyh7gq
+  InstanceProfile:
+    Type: String
+    Default: S3-CICDrole
+  IamRole:
+    Type: String
+    Default: roleS3-CICDrole
+Resources:
+  sgHCMBuildServerGitlabRunner:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupName: Gitlab_Runner_SG
+      GroupDescription: Gitlab_Runner_SG
+      VpcId: !Ref VpcId
+  ingHCMBuildServerGitlabRunner:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      GroupId: !GetAtt
+        - sgHCMBuildServerGitlabRunner
+        - GroupId
+      IpProtocol: TCP
+      FromPort: 0
+      ToPort: 22
+      CidrIp: 0.0.0.0/0
+      Description: Open_Gitlab_Runner_SG
+    DependsOn: sgHCMBuildServerGitlabRunner
+  ipHCMBuildServer:
+    Type: 'AWS::IAM::InstanceProfile'
+    Properties:
+      InstanceProfileName: !Ref InstanceProfile
+      Roles:
+        - !Ref roleHCMBuildServer
+  roleHCMBuildServer:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      RoleName: !Ref IamRole
+  policyHCMBuildServer:
+    Type: 'AWS::IAM::Policy'
+    Properties:
+      PolicyName: policyHCMBuildServer
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Action:
+              - 's3:*'
+            Resource: '*'
+      Roles:
+        - !Ref roleHCMBuildServer
+  ec2HCMBuildServer:
+    Type: 'AWS::EC2::Instance'
+    Properties:
+      InstanceInitiatedShutdownBehavior: stop
+      Monitoring: false
+      SubnetId: !Ref SubnetId
+      ImageId: !Ref AmiId
+      IamInstanceProfile: !Ref ipHCMBuildServer
+      SecurityGroupIds:
+        - !Ref sgHCMBuildServerGitlabRunner
+      KeyName: !Ref SSHKey
+      InstanceType: !Ref InstanceType
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            VolumeSize: !Ref RootVolumeSize
+      Tags:
+        - Key: Name
+          Value: CI/CD CF
+        - Key: Creation
+          Value: CloudFormation
+        - Key: User
+          Value: Marko
+      UserData: !Base64
+        'Fn::Sub': |
+          #!/bin/bash
+          hostnamectl set-hostname buildserver1.meerkats.internal
+
+          # install wget
+          sudo yum install wget -y
+
+          # install zip
+          sudo yum install zip -y
+
+          # install git
+          sudo yum install git -y
+
+          # install java
+          dnf install java-1.8.0-openjdk-devel -y
+
+          # setup python
+          ln -fs python3 /usr/bin/python
+          ln -fs pip3 /usr/bin/pip
+
+          # install Gitlab-Runner
+          if [[ $(uname --m) = "x86_64"  ]]; then
+
+               # Linux x86-64
+               sudo wget -O /usr/local/bin/gitlab-runner https://gitlab-runner-downloads.s3.amazonaws.com/latest/binaries/gitlab-runner-linux-amd64
+
+          elif [[ $(uname --m) = "x86"  ]]; then
+
+               # Linux x86
+               sudo wget -O /usr/local/bin/gitlab-runner https://gitlab-runner-downloads.s3.amazonaws.com/latest/binaries/gitlab-runner-linux-386
+
+          elif [[ $(uname --m) = "arm"  ]]; then
+               # Linux arm
+               sudo wget -O /usr/local/bin/gitlab-runner https://gitlab-runner-downloads.s3.amazonaws.com/latest/binaries/gitlab-runner-linux-arm
+
+          fi
+
+          sudo chmod +x /usr/local/bin/gitlab-runner
+
+          sudo useradd --comment 'GitLab Runner' --create-home gitrunner --shell /bin/bash
+          /awscli-bundle/install -b ~/bin/aws
+          export PATH=$PATH:/home/gitlab-runner/bin/
+
+          # add gitlab-runner to the $PATH (tested in Redhat 8)
+          echo 'export PATH=$PATH:/usr/local/bin/' > /etc/profile.d/gitlab-runner.sh
+          sudo chmod +x /etc/profile.d/gitlab-runner.sh
+
+          # Reload profile
+          . /etc/profile
+
+          gitlab-runner install --user=gitrunner --working-directory=/home/gitrunner
+          gitlab-runner start
+
+          # register Gitlab-Runner
+          gitlab-runner register \
+            --non-interactive \
+            --url "${GitlabURL}" \
+            --registration-token "${GitlabRunnerToken}" \
+            --executor "shell" \
+            --tag-list "frontend, history, shell-exec" \
+            --run-untagged="false"
+
+          # unregister Gitlab-Runners script
+          sudo mkdir -p /resources
+          sudo touch ./resources/unregister-runner.sh
+          echo "gitlab-runner unregister --all-runners" >> ./resources/unregister-runner.sh
+          echo "gitlab-runner verify --delete" >> ./resources/unregister-runner.sh
+          sudo chmod +x ./resources/unregister-runner.sh
+
+          sudo yum update -y
+
+          chown -R gitrunner:gitrunner /home/gitrunner/
+
+          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+          unzip awscliv2.zip
+          ./aws/install
+
+          echo 'PATH=$HOME/bin/:$HOME/.local/lib/aws/bin/:$PATH' >> /home/gitrunner/.bash_profile
+          echo 'export PATH' >> /home/gitrunner/.bash_profile
+
+          echo 'export PYTHONPATH' >> /home/gitrunner/.bash_profile
+          echo 'export PATH=$PATH:/home/gitrunner/bin/' >> /home/gitrunner/.bash_profile
+
+          echo 'PATH=$HOME/bin/:$HOME/.local/lib/aws/bin/:$PATH' /home/gitrunner/.bashrc
+          echo 'export PATH' /home/gitrunner/.bashrc
+
+          echo 'export PYTHONPATH' /home/gitrunner/.bashrc
+          echo 'export PATH=$PATH:/home/gitrunner/bin/' /home/gitrunner/.bashrc
+
+          chown -R gitrunner:gitrunner /home/gitrunner/bin

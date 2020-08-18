@@ -1,0 +1,37 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  AWS CloudFormation S3 Bucket on which will be
+  deployed artifacts from Git (git runner). Marko Version
+Parameters:
+  S3Name:
+    Type: String
+    Default: sbp1artifactlocation
+Resources:
+  S3KmsKeyArn:
+    Type: 'AWS::KMS::Key'
+    Properties:
+      EnableKeyRotation: true
+      KeyPolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: Enable IAM User Permissions
+            Effect: Allow
+            Principal:
+              AWS:
+                - !Sub 'arn:aws:iam::${AWS::AccountId}:root'
+                - 'arn:aws:iam::050572347738:role/roleS3-CICDrole'
+            Action: '*'
+            Resource: '*'
+  S3BucketStore:
+    Type: 'AWS::S3::Bucket'
+    Properties:
+      BucketName:
+        Fn::Sub: ${AWS::AccountId}-${S3Name}
+      AccessControl: Private
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: aws:kms
+              KMSMasterKeyID: !GetAtt S3KmsKeyArn.Arn
